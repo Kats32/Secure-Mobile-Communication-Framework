@@ -41,12 +41,16 @@ def receive_json(client):
     return json.loads(message.decode())
 
 
-def send_message(counter, tamper=False):
+def send_message(counter, tamper=False, username=None, password=None, message=None):
 
-    username = input("Username: ")
-    password = input("Password: ")
+    if username is None:
+        username = input("Username: ")
 
-    message = input("Enter message: ")
+    if password is None:
+        password = input("Password: ")
+
+    if message is None:
+        message = input("Enter message: ")
 
     
     # Generate ECDH key pair
@@ -213,8 +217,10 @@ def send_message(counter, tamper=False):
 
     print("\nServer response:")
     print(response)
-
+    
     client.close()
+
+    return encrypted_message
 
 
 def replay_attack():
@@ -379,6 +385,15 @@ def run_replay():
         }
 
     return replay_demo(last_packet)
+
+def create_secure_packet(username, password, message):
+
+    return send_message(
+        counter=1,
+        username=username,
+        password=password,
+        message=message
+    )
 
 if __name__ == "__main__":
 

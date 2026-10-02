@@ -9,26 +9,52 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QFrame,
     QDialog,
+    QInputDialog,
+    QStackedWidget
+)
+
+from client import create_secure_packet
+
+from attacks import (
+    eavesdropping_demo,
+    tampering_demo,
+    replay_demo
+)
+
+from pages import (
+    SecureChatPage,
+    CryptoKeysPage,
+    ActivityLogsPage
 )
 
 from PySide6.QtGui import QPixmap, QPainter
 from PySide6.QtCore import Qt
 
+from datetime import datetime
+
 
 class Dashboard(QWidget):
 
     def __init__(self):
-
         super().__init__()
 
-        self.setWindowTitle("Secure Mobile Communication Framework")
+        self.last_packet = None
+        self.activity_items = []
+        self.activity_history = []
+
+        self.setWindowTitle(
+            "Secure Mobile Communication Framework"
+        )
+
         self.resize(1500, 900)
 
         # -------------------------------------------------
         # FIND MARBLE IMAGE AUTOMATICALLY
         # -------------------------------------------------
 
-        assets_folder = Path(__file__).resolve().parent / "assets"
+        assets_folder = (
+            Path(__file__).resolve().parent / "assets"
+        )
 
         image_extensions = [
             "*.png",
@@ -40,11 +66,14 @@ class Dashboard(QWidget):
         self.background = QPixmap()
 
         for extension in image_extensions:
-
-            images = list(assets_folder.glob(extension))
+            images = list(
+                assets_folder.glob(extension)
+            )
 
             if images:
-                self.background = QPixmap(str(images[0]))
+                self.background = QPixmap(
+                    str(images[0])
+                )
                 break
 
         # -------------------------------------------------
@@ -53,7 +82,10 @@ class Dashboard(QWidget):
 
         main_layout = QHBoxLayout(self)
 
-        main_layout.setContentsMargins(22, 22, 22, 22)
+        main_layout.setContentsMargins(
+            22, 22, 22, 22
+        )
+
         main_layout.setSpacing(16)
 
         # -------------------------------------------------
@@ -62,7 +94,7 @@ class Dashboard(QWidget):
 
         sidebar = QFrame()
 
-        sidebar.setFixedWidth(220)
+        sidebar.setFixedWidth(240)
 
         sidebar.setStyleSheet("""
             QFrame {
@@ -72,90 +104,76 @@ class Dashboard(QWidget):
         """)
 
         sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(16, 18, 16, 18)
+        sidebar_layout.setSpacing(4)
 
-        sidebar_layout.setContentsMargins(16, 20, 16, 20)
-        sidebar_layout.setSpacing(12)
-
-        # Logo
-
+        # LOGO
         logo = QLabel("✮")
-
         logo.setAlignment(Qt.AlignCenter)
-
+        logo.setFixedHeight(38)
         logo.setStyleSheet("""
             QLabel {
                 color: #e44d87;
-                font-size: 34px;
+                font-size: 30px;
                 font-weight: bold;
                 background: transparent;
             }
         """)
-
         sidebar_layout.addWidget(logo)
 
-        # Title
-
+        # TITLE
         title = QLabel("SECURE\nCOMMUNICATION")
-
         title.setAlignment(Qt.AlignCenter)
-
         title.setStyleSheet("""
             QLabel {
                 color: #52203f;
-                font-size: 16px;
+                font-size: 18px;
                 font-weight: bold;
                 letter-spacing: 1px;
                 background: transparent;
             }
         """)
-
         sidebar_layout.addWidget(title)
 
+        # SUBTITLE
         subtitle = QLabel("HYBRID CRYPTOGRAPHIC\nFRAMEWORK")
-
         subtitle.setAlignment(Qt.AlignCenter)
-
         subtitle.setStyleSheet("""
             QLabel {
                 color: #c65a83;
-                font-size: 8px;
+                font-size: 10px;
                 letter-spacing: 1px;
                 background: transparent;
             }
         """)
-
         sidebar_layout.addWidget(subtitle)
 
-        sidebar_layout.addSpacing(22)
+        # SMALL GAP BEFORE NAVIGATION
+        sidebar_layout.addSpacing(12)
 
-        # -------------------------------------------------
         # SIDEBAR BUTTONS
-        # -------------------------------------------------
-
         buttons = [
             "Dashboard",
             "Secure Chat",
             "Cryptographic Keys",
             "Attack Simulator",
-            "Security Tests",
             "Activity Logs",
         ]
 
         for text in buttons:
-
             button = QPushButton("◆  " + text)
-
             button.setCursor(Qt.PointingHandCursor)
+            button.setFixedHeight(40)
 
             button.setStyleSheet("""
                 QPushButton {
                     text-align: left;
-                    padding: 10px;
+                    padding: 8px 10px;
                     border: none;
                     border-radius: 8px;
                     color: #602448;
                     background: transparent;
-                    font-size: 12px;
+                    font-size: 15px;
                 }
 
                 QPushButton:hover {
@@ -163,37 +181,56 @@ class Dashboard(QWidget):
                 }
             """)
 
-            if text == "Attack Simulator":
-
+            if text == "Dashboard":
+                button.clicked.connect(
+                    self.show_dashboard
+                )
+            elif text == "Secure Chat":
+                button.clicked.connect(
+                    self.show_secure_chat
+                )
+            elif text == "Cryptographic Keys":
+                button.clicked.connect(
+                    self.show_crypto_keys
+                )
+            elif text == "Attack Simulator":
                 button.clicked.connect(
                     self.show_attack_simulator
+                )
+            elif text == "Activity Logs":
+                button.clicked.connect(
+                    self.show_activity_logs
                 )
 
             sidebar_layout.addWidget(button)
 
+        # PUSH REMAINING CONTENT DOWN
         sidebar_layout.addStretch()
 
-        # Version
-
+        # VERSION
         version = QLabel("v1.0  •  SECURE SYSTEM")
-
         version.setAlignment(Qt.AlignCenter)
-
         version.setStyleSheet("""
             QLabel {
                 color: #c87999;
-                font-size: 8px;
+                font-size: 10px;
                 background: transparent;
             }
         """)
-
         sidebar_layout.addWidget(version)
-
         main_layout.addWidget(sidebar)
 
         # -------------------------------------------------
         # CONTENT AREA
         # -------------------------------------------------
+
+        self.pages = QStackedWidget()
+
+        self.pages.setStyleSheet("""
+            QStackedWidget {
+                background: transparent;
+            }
+        """)
 
         content = QWidget()
 
@@ -215,7 +252,9 @@ class Dashboard(QWidget):
 
         header_layout = QHBoxLayout()
 
-        heading = QLabel("Security Dashboard")
+        heading = QLabel(
+            "Security Dashboard"
+        )
 
         heading.setStyleSheet("""
             QLabel {
@@ -230,9 +269,14 @@ class Dashboard(QWidget):
 
         header_layout.addStretch()
 
+        # SYSTEM ONLINE BOX
+
         online = QFrame()
 
-        online.setFixedSize(135, 70)
+        online.setFixedSize(
+            150,
+            75
+        )
 
         online.setStyleSheet("""
             QFrame {
@@ -253,12 +297,14 @@ class Dashboard(QWidget):
             }
         """)
 
-        status_text = QLabel("SYSTEM ONLINE")
+        status_text = QLabel(
+            "SYSTEM ONLINE"
+        )
 
         status_text.setStyleSheet("""
             QLabel {
                 color: #d83f79;
-                font-size: 10px;
+                font-size: 12px;
                 font-weight: bold;
                 background: transparent;
             }
@@ -290,7 +336,6 @@ class Dashboard(QWidget):
 
         content_layout.addWidget(welcome)
 
-        content_layout.addSpacing(55)
 
         # -------------------------------------------------
         # SECURITY CARDS
@@ -310,7 +355,9 @@ class Dashboard(QWidget):
 
             card = QPushButton()
 
-            card.setCursor(Qt.PointingHandCursor)
+            card.setCursor(
+                Qt.PointingHandCursor
+            )
 
             card.setStyleSheet("""
                 QPushButton {
@@ -353,12 +400,14 @@ class Dashboard(QWidget):
 
             card_layout.addWidget(icon)
 
-            card_title = QLabel(title_text)
+            card_title = QLabel(
+                title_text
+            )
 
             card_title.setStyleSheet("""
                 QLabel {
                     color: #542040;
-                    font-size: 10px;
+                    font-size: 14px;
                     font-weight: bold;
                     background: transparent;
                 }
@@ -368,12 +417,14 @@ class Dashboard(QWidget):
 
             card_layout.addStretch()
 
-            card_status = QLabel("● " + status)
+            card_status = QLabel(
+                "● " + status
+            )
 
             card_status.setStyleSheet("""
                 QLabel {
                     color: #d83f79;
-                    font-size: 10px;
+                    font-size: 12px;
                     font-weight: bold;
                     background: transparent;
                 }
@@ -404,7 +455,9 @@ class Dashboard(QWidget):
             }
         """)
 
-        security_layout = QVBoxLayout(security_frame)
+        security_layout = QVBoxLayout(
+            security_frame
+        )
 
         security_layout.setContentsMargins(
             20, 16, 20, 16
@@ -412,18 +465,22 @@ class Dashboard(QWidget):
 
         security_layout.setSpacing(8)
 
-        security_title = QLabel("SECURITY STATUS")
+        security_title = QLabel(
+            "SECURITY STATUS"
+        )
 
         security_title.setStyleSheet("""
             QLabel {
                 color: #542040;
-                font-size: 14px;
+                font-size: 17px;
                 font-weight: bold;
                 background: transparent;
             }
         """)
 
-        security_layout.addWidget(security_title)
+        security_layout.addWidget(
+            security_title
+        )
 
         security_items = [
             ("Authentication", "VERIFIED"),
@@ -437,24 +494,28 @@ class Dashboard(QWidget):
 
             row = QHBoxLayout()
 
-            left = QLabel("●  " + item)
+            left = QLabel(
+                "●  " + item
+            )
 
             left.setStyleSheet("""
                 QLabel {
                     color: #8b4b69;
-                    font-size: 11px;
+                    font-size: 13px;
                     background: transparent;
                 }
             """)
 
             right = QLabel(status)
 
-            right.setAlignment(Qt.AlignRight)
+            right.setAlignment(
+                Qt.AlignRight
+            )
 
             right.setStyleSheet("""
                 QLabel {
                     color: #d83f79;
-                    font-size: 10px;
+                    font-size: 12px;
                     font-weight: bold;
                     background: transparent;
                 }
@@ -466,7 +527,9 @@ class Dashboard(QWidget):
 
             security_layout.addLayout(row)
 
-        content_layout.addWidget(security_frame)
+        content_layout.addWidget(
+            security_frame
+        )
 
         # -------------------------------------------------
         # RECENT ACTIVITY
@@ -481,54 +544,143 @@ class Dashboard(QWidget):
             }
         """)
 
-        activity_layout = QVBoxLayout(activity_frame)
+        self.activity_layout = QVBoxLayout(
+            activity_frame
+        )
 
-        activity_layout.setContentsMargins(
+        self.activity_layout.setContentsMargins(
             20, 16, 20, 16
         )
 
-        activity_layout.setSpacing(8)
+        self.activity_layout.setSpacing(8)
 
-        activity_title = QLabel("RECENT ACTIVITY")
+        activity_title = QLabel(
+            "RECENT ACTIVITY"
+        )
 
         activity_title.setStyleSheet("""
             QLabel {
                 color: #542040;
-                font-size: 14px;
+                font-size: 17px;
                 font-weight: bold;
                 background: transparent;
             }
         """)
 
-        activity_layout.addWidget(activity_title)
+        self.activity_layout.addWidget(
+            activity_title
+        )
 
-        activities = [
-            ("22:41", "ECDH key exchange completed"),
-            ("22:42", "Secure session established"),
-            ("22:43", "Message encryption activated"),
-            ("22:44", "RSA signature verified"),
+        # Initial activities
+
+        initial_activities = [
+            "ECDH key exchange completed",
+            "Secure session established",
+            "Message encryption activated",
+            "RSA signature verified"
         ]
 
-        for time, message in activities:
+        for message in initial_activities:
 
-            activity = QLabel(
-                "◆  " + time + "    " + message
+            self.add_activity(
+                message,
+                add_to_history=True
             )
 
-            activity.setStyleSheet("""
-                QLabel {
-                    color: #9a607c;
-                    font-size: 10px;
-                    padding: 2px;
-                    background: transparent;
-                }
-            """)
+        content_layout.addWidget(
+            activity_frame
+        )
 
-            activity_layout.addWidget(activity)
+        # -------------------------------------------------
+        # ADD DASHBOARD HOME PAGE
+        # -------------------------------------------------
 
-        content_layout.addWidget(activity_frame)
+        self.pages.addWidget(content)
 
-        main_layout.addWidget(content)
+        # -------------------------------------------------
+        # ADD OTHER PAGES
+        # -------------------------------------------------
+
+        self.secure_chat_page = SecureChatPage(self)
+        self.crypto_keys_page = CryptoKeysPage(self)
+        self.activity_logs_page = ActivityLogsPage(self)
+
+        self.pages.addWidget(
+            self.secure_chat_page
+        )
+
+        self.pages.addWidget(
+            self.crypto_keys_page
+        )
+
+        self.pages.addWidget(
+            self.activity_logs_page
+        )
+
+        # Dashboard is shown when application starts
+
+        self.pages.setCurrentIndex(0)
+
+        main_layout.addWidget(
+            self.pages
+        )
+
+    # =====================================================
+    # RECENT ACTIVITY
+    # =====================================================
+
+    def add_activity(
+        self,
+        message,
+        add_to_history=True
+    ):
+
+        current_time = datetime.now().strftime(
+            "%H:%M:%S"
+        )
+
+        if add_to_history:
+
+            self.activity_history.insert(
+                0,
+                (current_time, message)
+            )
+
+        activity = QLabel(
+            "◆  " +
+            current_time +
+            "    " +
+            message
+        )
+
+        activity.setStyleSheet("""
+            QLabel {
+                color: #9a607c;
+                font-size: 13px;
+                padding: 2px;
+                background: transparent;
+            }
+        """)
+
+        self.activity_layout.insertWidget(
+            1,
+            activity
+        )
+
+        if add_to_history:
+
+            self.activity_items.insert(
+                0,
+                activity
+            )
+
+        # Keep only latest 6 activities
+
+        while len(self.activity_items) > 6:
+
+            old_activity = self.activity_items.pop()
+
+            old_activity.deleteLater()
 
     # =====================================================
     # ATTACK SIMULATOR
@@ -563,7 +715,7 @@ class Dashboard(QWidget):
                 border: none;
                 border-radius: 12px;
                 padding: 12px;
-                font-size: 11px;
+                font-size: 14px;
                 font-weight: bold;
             }
 
@@ -588,7 +740,9 @@ class Dashboard(QWidget):
 
         logo = QLabel("⚠")
 
-        logo.setAlignment(Qt.AlignCenter)
+        logo.setAlignment(
+            Qt.AlignCenter
+        )
 
         logo.setStyleSheet("""
             QLabel {
@@ -604,7 +758,9 @@ class Dashboard(QWidget):
             "ATTACK SIMULATOR"
         )
 
-        title.setAlignment(Qt.AlignCenter)
+        title.setAlignment(
+            Qt.AlignCenter
+        )
 
         title.setStyleSheet("""
             QLabel {
@@ -620,12 +776,14 @@ class Dashboard(QWidget):
             "Select an attack to simulate against the secure session."
         )
 
-        description.setAlignment(Qt.AlignCenter)
+        description.setAlignment(
+            Qt.AlignCenter
+        )
 
         description.setStyleSheet("""
             QLabel {
                 color: #9a607c;
-                font-size: 11px;
+                font-size: 13px;
             }
         """)
 
@@ -648,7 +806,9 @@ class Dashboard(QWidget):
             self.simulate_eavesdropping
         )
 
-        layout.addWidget(eavesdrop_button)
+        layout.addWidget(
+            eavesdrop_button
+        )
 
         # -------------------------------------------------
         # TAMPERING
@@ -665,7 +825,9 @@ class Dashboard(QWidget):
             self.simulate_tampering
         )
 
-        layout.addWidget(tamper_button)
+        layout.addWidget(
+            tamper_button
+        )
 
         # -------------------------------------------------
         # REPLAY
@@ -682,11 +844,15 @@ class Dashboard(QWidget):
             self.simulate_replay
         )
 
-        layout.addWidget(replay_button)
+        layout.addWidget(
+            replay_button
+        )
 
         layout.addStretch()
 
-        close_button = QPushButton("CLOSE")
+        close_button = QPushButton(
+            "CLOSE"
+        )
 
         close_button.setFixedWidth(120)
 
@@ -702,61 +868,214 @@ class Dashboard(QWidget):
         dialog.exec()
 
     # =====================================================
-    # ATTACK PLACEHOLDERS
+    # GET SECURE PACKET
+    # =====================================================
+
+    def get_secure_packet(self):
+
+        username, ok = QInputDialog.getText(
+            self,
+            "Authentication",
+            "Username:"
+        )
+
+        if not ok:
+            return None
+
+        password, ok = QInputDialog.getText(
+            self,
+            "Authentication",
+            "Password:"
+        )
+
+        if not ok:
+            return None
+
+        message, ok = QInputDialog.getText(
+            self,
+            "Secure Message",
+            "Enter message:"
+        )
+
+        if not ok:
+            return None
+
+        try:
+
+            packet = create_secure_packet(
+                username,
+                password,
+                message
+            )
+
+            self.last_packet = packet
+
+            return packet
+
+        except Exception as error:
+
+            self.add_activity(
+                "Secure communication failed"
+            )
+
+            self.show_attack_result({
+                "type": "Connection Error",
+                "status": "FAILED",
+                "original": None,
+                "modified": None,
+                "result": str(error),
+                "details":
+                    "Unable to establish secure communication."
+            })
+
+            return None
+
+    # =====================================================
+    # EAVESDROPPING
     # =====================================================
 
     def simulate_eavesdropping(self):
 
-        self.show_attack_result(
-            "Eavesdropping Attack",
-            "Encrypted packet captured.\n\n"
-            "The attacker can observe ciphertext,\n"
-            "but the plaintext remains protected.",
-            "✓ Confidentiality protected"
+        self.add_activity(
+            "Eavesdropping simulation started"
         )
+
+        packet = self.get_secure_packet()
+
+        if packet is None:
+            return
+
+        result = eavesdropping_demo(
+            packet
+        )
+
+        self.show_attack_result(
+            result
+        )
+
+    # =====================================================
+    # TAMPERING
+    # =====================================================
 
     def simulate_tampering(self):
 
-        self.show_attack_result(
-            "Tampering Attack",
-            "Ciphertext modification detected.\n\n"
-            "The modified message failed the\n"
-            "integrity verification.",
-            "✓ Message rejected\n"
-            "✓ Integrity protected"
+        self.add_activity(
+            "Tampering simulation started"
         )
+
+        packet = self.get_secure_packet()
+
+        if packet is None:
+            return
+
+        result = tampering_demo(
+            packet
+        )
+
+        self.show_attack_result(
+            result
+        )
+
+    # =====================================================
+    # REPLAY
+    # =====================================================
 
     def simulate_replay(self):
 
+        self.add_activity(
+            "Replay attack simulation started"
+        )
+
+        packet = self.get_secure_packet()
+
+        if packet is None:
+            return
+
+        result = replay_demo(
+            packet
+        )
+
         self.show_attack_result(
-            "Replay Attack",
-            "Previously captured message detected.\n\n"
-            "The message counter prevents reuse\n"
-            "of an earlier authenticated message.",
-            "✓ Replay rejected\n"
-            "✓ Replay protection active"
+            result
         )
 
     # =====================================================
     # ATTACK RESULT DIALOG
     # =====================================================
 
-    def show_attack_result(
-        self,
-        attack_type,
-        description,
-        result
-    ):
+    def show_attack_result(self, result):
+
+        attack_type = result.get(
+            "type",
+            "Security Attack"
+        )
+
+        status = result.get(
+            "status",
+            "UNKNOWN"
+        )
+
+        original = result.get(
+            "original"
+        )
+
+        modified = result.get(
+            "modified"
+        )
+
+        server_result = result.get(
+            "result"
+        )
+
+        details = result.get(
+            "details",
+            ""
+        )
+
+        # -------------------------------------------------
+        # UPDATE RECENT ACTIVITY
+        # -------------------------------------------------
+
+        if status.upper() in [
+            "BLOCKED",
+            "DETECTED",
+            "PROTECTED",
+            "SUCCESS"
+        ]:
+
+            self.add_activity(
+                attack_type +
+                " detected — security protection active"
+            )
+
+        elif status.upper() == "FAILED":
+
+            self.add_activity(
+                attack_type +
+                " simulation failed"
+            )
+
+        else:
+
+            self.add_activity(
+                attack_type +
+                " processed — status: " +
+                status
+            )
+
+        # -------------------------------------------------
+        # RESULT DIALOG
+        # -------------------------------------------------
 
         dialog = QDialog(self)
 
         dialog.setWindowTitle(
-            "Attack Detected"
+            "Attack Result"
         )
 
         dialog.setFixedSize(
-            520,
-            420
+            650,
+            560
         )
 
         dialog.setStyleSheet("""
@@ -793,12 +1112,14 @@ class Dashboard(QWidget):
 
         alert = QLabel("⚠")
 
-        alert.setAlignment(Qt.AlignCenter)
+        alert.setAlignment(
+            Qt.AlignCenter
+        )
 
         alert.setStyleSheet("""
             QLabel {
                 color: #d83f79;
-                font-size: 38px;
+                font-size: 34px;
                 font-weight: bold;
             }
         """)
@@ -809,7 +1130,9 @@ class Dashboard(QWidget):
             "ATTACK DETECTED"
         )
 
-        heading.setAlignment(Qt.AlignCenter)
+        heading.setAlignment(
+            Qt.AlignCenter
+        )
 
         heading.setStyleSheet("""
             QLabel {
@@ -822,7 +1145,8 @@ class Dashboard(QWidget):
         layout.addWidget(heading)
 
         attack = QLabel(
-            "Type:  " + attack_type
+            "Type:  " +
+            attack_type
         )
 
         attack.setStyleSheet("""
@@ -835,22 +1159,90 @@ class Dashboard(QWidget):
 
         layout.addWidget(attack)
 
-        info = QLabel(description)
+        if original:
 
-        info.setWordWrap(True)
+            original_label = QLabel(
+                "Original Ciphertext:\n" +
+                original
+            )
 
-        info.setStyleSheet("""
-            QLabel {
-                color: #8b4b69;
-                font-size: 11px;
-                padding: 10px;
-            }
-        """)
+            original_label.setWordWrap(
+                True
+            )
 
-        layout.addWidget(info)
+            original_label.setStyleSheet("""
+                QLabel {
+                    color: #8b4b69;
+                    background-color: rgba(255,255,255,220);
+                    border-radius: 10px;
+                    padding: 10px;
+                    font-size: 13px;
+                }
+            """)
+
+            layout.addWidget(
+                original_label
+            )
+
+        if modified:
+
+            modified_label = QLabel(
+                "Modified Ciphertext:\n" +
+                modified
+            )
+
+            modified_label.setWordWrap(
+                True
+            )
+
+            modified_label.setStyleSheet("""
+                QLabel {
+                    color: #8b4b69;
+                    background-color: rgba(255,255,255,220);
+                    border-radius: 10px;
+                    padding: 10px;
+                    font-size: 13px;
+                }
+            """)
+
+            layout.addWidget(
+                modified_label
+            )
+
+        if details:
+
+            details_label = QLabel(
+                details
+            )
+
+            details_label.setWordWrap(
+                True
+            )
+
+            details_label.setStyleSheet("""
+                QLabel {
+                    color: #8b4b69;
+                    font-size: 10px;
+                }
+            """)
+
+            layout.addWidget(
+                details_label
+            )
+
+        result_text = str(
+            server_result
+        )
 
         result_label = QLabel(
-            "RESULT\n\n" + result
+            "STATUS: " +
+            status +
+            "\n\n" +
+            result_text
+        )
+
+        result_label.setWordWrap(
+            True
         )
 
         result_label.setStyleSheet("""
@@ -858,17 +1250,21 @@ class Dashboard(QWidget):
                 color: #542040;
                 background-color: rgba(216, 63, 121, 20);
                 border-radius: 12px;
-                padding: 15px;
-                font-size: 11px;
+                padding: 14px;
+                font-size: 10px;
                 font-weight: bold;
             }
         """)
 
-        layout.addWidget(result_label)
+        layout.addWidget(
+            result_label
+        )
 
         layout.addStretch()
 
-        close_button = QPushButton("CLOSE")
+        close_button = QPushButton(
+            "CLOSE"
+        )
 
         close_button.clicked.connect(
             dialog.close
@@ -885,11 +1281,16 @@ class Dashboard(QWidget):
     # CRYPTO DETAILS
     # =====================================================
 
-    def show_crypto_details(self, crypto_type):
+    def show_crypto_details(
+        self,
+        crypto_type
+    ):
 
         dialog = QDialog(self)
 
-        dialog.setWindowTitle(crypto_type)
+        dialog.setWindowTitle(
+            crypto_type
+        )
 
         dialog.setFixedSize(
             480,
@@ -931,7 +1332,9 @@ class Dashboard(QWidget):
 
         logo = QLabel("✦")
 
-        logo.setAlignment(Qt.AlignCenter)
+        logo.setAlignment(
+            Qt.AlignCenter
+        )
 
         logo.setStyleSheet("""
             QLabel {
@@ -943,9 +1346,13 @@ class Dashboard(QWidget):
 
         layout.addWidget(logo)
 
-        title = QLabel(crypto_type)
+        title = QLabel(
+            crypto_type
+        )
 
-        title.setAlignment(Qt.AlignCenter)
+        title.setAlignment(
+            Qt.AlignCenter
+        )
 
         title.setStyleSheet("""
             QLabel {
@@ -994,24 +1401,30 @@ class Dashboard(QWidget):
 
             row = QHBoxLayout()
 
-            label = QLabel(label_text)
+            label = QLabel(
+                label_text
+            )
 
             label.setStyleSheet("""
                 QLabel {
                     color: #9a607c;
-                    font-size: 10px;
+                    font-size: 14px;
                     font-weight: bold;
                 }
             """)
 
-            value = QLabel(value_text)
+            value = QLabel(
+                value_text
+            )
 
-            value.setAlignment(Qt.AlignRight)
+            value.setAlignment(
+                Qt.AlignRight
+            )
 
             value.setStyleSheet("""
                 QLabel {
                     color: #d83f79;
-                    font-size: 10px;
+                    font-size: 14px;
                     font-weight: bold;
                 }
             """)
@@ -1024,7 +1437,9 @@ class Dashboard(QWidget):
 
         layout.addStretch()
 
-        close_button = QPushButton("CLOSE")
+        close_button = QPushButton(
+            "CLOSE"
+        )
 
         close_button.setCursor(
             Qt.PointingHandCursor
@@ -1040,6 +1455,35 @@ class Dashboard(QWidget):
         )
 
         dialog.exec()
+
+    # =====================================================
+    # PAGE NAVIGATION
+    # =====================================================
+
+    def show_dashboard(self):
+        self.pages.setCurrentIndex(0)
+
+    def show_secure_chat(self):
+
+        self.pages.setCurrentWidget(
+            self.secure_chat_page
+        )
+
+
+    def show_crypto_keys(self):
+
+        self.pages.setCurrentWidget(
+            self.crypto_keys_page
+        )
+
+
+    def show_activity_logs(self):
+
+        self.activity_logs_page.refresh()
+
+        self.pages.setCurrentWidget(
+            self.activity_logs_page
+        )
 
     # =====================================================
     # DRAW MARBLE BACKGROUND
