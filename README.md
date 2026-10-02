@@ -32,6 +32,9 @@ Secure-Mobile-Network/
 ├── client.py
 ├── server.py
 ├── crypto_utils.py
+├── register.py
+├── security_test.py
+├── auth.py
 ├── attacks.py
 ├── pages.py
 ├── assets/

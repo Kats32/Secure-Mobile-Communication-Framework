@@ -1,3 +1,7 @@
 {
-    "Kavya Amrutha": "bc3ce12945f0dd4982caba3c7adc4cc3787cab5c81c95a9c93bbc52d0a09a0e5"
+    "Kavya Amrutha": "bc3ce12945f0dd4982caba3c7adc4cc3787cab5c81c95a9c93bbc52d0a09a0e5",
+    "Laya Nirusha": {
+        "salt": "50cb25e4801c7f79a127e1098a0b7e80",
+        "password_hash": "0af25a3cb22c38bae7f6a9c479bbeb10e496de15458ff70a4b967617fc748ef8"
+    }
 }

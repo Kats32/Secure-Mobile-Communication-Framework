@@ -4,15 +4,17 @@ import hashlib
 import binascii
 
 from PySide6.QtWidgets import (
-    QDialog,
+    QApplication,
+    QWidget,
     QLabel,
     QLineEdit,
     QPushButton,
     QVBoxLayout,
-    QHBoxLayout,
     QMessageBox
 )
 from PySide6.QtCore import Qt
+
+from register import RegisterDialog
 
 
 USERS_FILE = "users.json"
@@ -29,14 +31,9 @@ def load_users():
         return {}
 
 
-def save_users(users):
-    with open(USERS_FILE, "w") as file:
-        json.dump(users, file, indent=4)
+def verify_password(password, salt_hex, stored_hash):
 
-
-def hash_password(password, salt=None):
-    if salt is None:
-        salt = os.urandom(16)
+    salt = binascii.unhexlify(salt_hex)
 
     password_hash = hashlib.pbkdf2_hmac(
         "sha256",
@@ -45,22 +42,24 @@ def hash_password(password, salt=None):
         100000
     )
 
-    return (
-        binascii.hexlify(salt).decode(),
-        binascii.hexlify(password_hash).decode()
-    )
+    calculated_hash = binascii.hexlify(password_hash).decode()
+
+    return calculated_hash == stored_hash
 
 
-class RegisterDialog(QDialog):
+class LoginWindow(QWidget):
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self):
+        super().__init__()
 
-        self.setWindowTitle("Create Account")
-        self.setFixedSize(450, 520)
+        self.setWindowTitle(
+            "Secure Mobile Communication Framework"
+        )
+
+        self.setFixedSize(500, 600)
 
         self.setStyleSheet("""
-            QDialog {
+            QWidget {
                 background: #f9edf4;
             }
 
@@ -72,7 +71,7 @@ class RegisterDialog(QDialog):
                 background: white;
                 border: 1px solid #d8a8c1;
                 border-radius: 10px;
-                padding: 12px;
+                padding: 13px;
                 font-size: 15px;
                 color: #542040;
             }
@@ -86,7 +85,7 @@ class RegisterDialog(QDialog):
                 color: white;
                 border: none;
                 border-radius: 10px;
-                padding: 12px;
+                padding: 13px;
                 font-size: 15px;
                 font-weight: bold;
             }
@@ -95,34 +94,42 @@ class RegisterDialog(QDialog):
                 background: #7b315b;
             }
 
-            QPushButton#backButton {
+            QPushButton#registerButton {
                 background: transparent;
                 color: #602448;
                 border: 1px solid #d8a8c1;
             }
 
-            QPushButton#backButton:hover {
+            QPushButton#registerButton:hover {
                 background: #f0d9e5;
             }
         """)
 
         layout = QVBoxLayout()
-        layout.setContentsMargins(45, 35, 45, 35)
-        layout.setSpacing(14)
+        layout.setContentsMargins(55, 50, 55, 50)
+        layout.setSpacing(15)
 
-        title = QLabel("CREATE ACCOUNT")
+        logo = QLabel("✮")
+        logo.setAlignment(Qt.AlignCenter)
+        logo.setStyleSheet("""
+            font-size: 42px;
+            color: #602448;
+        """)
+
+        title = QLabel("SECURE\nCOMMUNICATION")
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet("""
             font-size: 28px;
             font-weight: bold;
+            letter-spacing: 1px;
         """)
 
         subtitle = QLabel(
-            "Register a new secure communication account"
+            "HYBRID CRYPTOGRAPHIC FRAMEWORK"
         )
         subtitle.setAlignment(Qt.AlignCenter)
         subtitle.setStyleSheet("""
-            font-size: 13px;
+            font-size: 12px;
             color: #8a6075;
         """)
 
@@ -133,91 +140,98 @@ class RegisterDialog(QDialog):
         self.password_input.setPlaceholderText("Password")
         self.password_input.setEchoMode(QLineEdit.Password)
 
-        self.confirm_input = QLineEdit()
-        self.confirm_input.setPlaceholderText("Confirm Password")
-        self.confirm_input.setEchoMode(QLineEdit.Password)
+        login_button = QPushButton("LOGIN")
+        login_button.clicked.connect(self.login)
 
-        create_button = QPushButton("Create Account")
-        create_button.clicked.connect(self.register_user)
+        register_button = QPushButton("CREATE NEW ACCOUNT")
+        register_button.setObjectName("registerButton")
+        register_button.clicked.connect(self.open_register)
 
-        back_button = QPushButton("Back to Login")
-        back_button.setObjectName("backButton")
-        back_button.clicked.connect(self.reject)
-
+        layout.addWidget(logo)
         layout.addWidget(title)
         layout.addWidget(subtitle)
-        layout.addSpacing(15)
+
+        layout.addSpacing(30)
+
         layout.addWidget(self.username_input)
         layout.addWidget(self.password_input)
-        layout.addWidget(self.confirm_input)
+
         layout.addSpacing(10)
-        layout.addWidget(create_button)
-        layout.addWidget(back_button)
+
+        layout.addWidget(login_button)
+        layout.addWidget(register_button)
+
+        layout.addStretch()
 
         self.setLayout(layout)
 
-    def register_user(self):
+        self.dashboard = None
+
+    def open_register(self):
+
+        dialog = RegisterDialog(self)
+
+        if dialog.exec():
+            self.username_input.clear()
+            self.password_input.clear()
+            self.username_input.setFocus()
+
+    def login(self):
 
         username = self.username_input.text().strip()
         password = self.password_input.text()
-        confirm_password = self.confirm_input.text()
 
-        if not username or not password or not confirm_password:
+        if not username or not password:
             QMessageBox.warning(
                 self,
-                "Registration",
-                "Please fill in all fields."
-            )
-            return
-
-        if len(username) < 3:
-            QMessageBox.warning(
-                self,
-                "Registration",
-                "Username must contain at least 3 characters."
-            )
-            return
-
-        if len(password) < 6:
-            QMessageBox.warning(
-                self,
-                "Registration",
-                "Password must contain at least 6 characters."
-            )
-            return
-
-        if password != confirm_password:
-            QMessageBox.warning(
-                self,
-                "Registration",
-                "Passwords do not match."
+                "Login",
+                "Please enter your username and password."
             )
             return
 
         users = load_users()
 
-        if username in users:
+        if username not in users:
             QMessageBox.warning(
                 self,
-                "Registration",
-                "Username already exists."
+                "Login Failed",
+                "Invalid username or password."
             )
             return
 
-        salt, password_hash = hash_password(password)
+        user_data = users[username]
 
-        users[username] = {
-            "salt": salt,
-            "password_hash": password_hash
-        }
+        if not verify_password(
+            password,
+            user_data["salt"],
+            user_data["password_hash"]
+        ):
+            QMessageBox.warning(
+                self,
+                "Login Failed",
+                "Invalid username or password."
+            )
+            return
 
-        save_users(users)
+        self.open_dashboard(username)
 
-        QMessageBox.information(
-            self,
-            "Registration Successful",
-            "Account created successfully.\n\n"
-            "You can now log in."
-        )
+    def open_dashboard(self, username):
 
-        self.accept()
+        from dashboard import Dashboard
+
+        self.dashboard = Dashboard(username)
+        self.dashboard.show()
+
+        self.close()
+
+
+if __name__ == "__main__":
+
+    app = QApplication([])
+
+    app.setStyle("Fusion")
+
+    window = LoginWindow()
+    window.show()
+
+    app.exec()

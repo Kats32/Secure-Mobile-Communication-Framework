@@ -35,9 +35,10 @@ from datetime import datetime
 
 class Dashboard(QWidget):
 
-    def __init__(self):
+    def __init__(self, username=None):
         super().__init__()
 
+        self.username = username
         self.last_packet = None
         self.activity_items = []
         self.activity_history = []
@@ -322,7 +323,9 @@ class Dashboard(QWidget):
         # -------------------------------------------------
 
         welcome = QLabel(
-            "Welcome back. Your secure communication environment is ready.\n"
+            f"Welcome back, {self.username}. Your secure communication environment is ready.\n"
+            if self.username
+            else "Welcome back. Your secure communication environment is ready.\n"
         )
 
         welcome.setStyleSheet("""
@@ -1532,13 +1535,12 @@ class Dashboard(QWidget):
 # ---------------------------------------------------------
 
 if __name__ == "__main__":
+    from login import LoginWindow
 
     app = QApplication([])
-
     app.setStyle("Fusion")
 
-    window = Dashboard()
-
+    window = LoginWindow()
     window.show()
 
     app.exec()
