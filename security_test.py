@@ -1,247 +1,120 @@
-from auth import authenticate
+"""Run focused, isolated checks for the project's auth and crypto helpers."""
+
+from pathlib import Path
+import sys
+import tempfile
+
+import auth
 from crypto_utils import (
-    generate_ec_keypair,
+    decrypt_message,
     derive_shared_key,
     encrypt_message,
-    decrypt_message,
+    generate_ec_keypair,
     generate_rsa_keypair,
     sign_message,
-    verify_signature
+    verify_signature,
 )
+from replay_protection import is_replay
 
 
-def print_result(test_name, passed):
-    if passed:
-        print(f"[PASS] {test_name}")
-    else:
-        print(f"[FAIL] {test_name}")
-
-
-print("=" * 50)
-print("     SECURE COMMUNICATION SECURITY TEST")
-print("=" * 50)
-
-
-# 1. Authentication Test
-
-print("\n1. Authentication Test")
-
-username = "Kavya Amrutha"
-password = "munni#123"
-
-try:
-    result = authenticate(username, password)
-
-    print_result(
-        "User Authentication",
-        result
-    )
-
-except Exception as e:
-    print_result(
-        "User Authentication",
-        False
-    )
-    print("Error:", e)
-
-
-# 2. ECDH Key Exchange Test
-
-print("\n2. ECDH Key Exchange Test")
-
-try:
-    client_private, client_public = generate_ec_keypair()
-    server_private, server_public = generate_ec_keypair()
-
-    client_shared_key = derive_shared_key(
-        client_private,
-        server_public
-    )
-
-    server_shared_key = derive_shared_key(
-        server_private,
-        client_public
-    )
-
-    result = client_shared_key == server_shared_key
-
-    print_result(
-        "ECDH Shared Key Agreement",
-        result
-    )
-
-except Exception as e:
-    print_result(
-        "ECDH Shared Key Agreement",
-        False
-    )
-    print("Error:", e)
-
-
-# 3. AES-GCM Encryption Test
-
-print("\n3. AES-GCM Encryption Test")
-
-try:
-    message = "Secure Mobile Communication"
-
-    nonce, ciphertext = encrypt_message(
-        client_shared_key,
-        message
-    )
-
-    decrypted_message = decrypt_message(
-        server_shared_key,
-        nonce,
-        ciphertext
-    )
-
-    result = decrypted_message == message
-
-    print_result(
-        "AES-GCM Encryption and Decryption",
-        result
-    )
-
-except Exception as e:
-    print_result(
-        "AES-GCM Encryption and Decryption",
-        False
-    )
-    print("Error:", e)
-
-
-# 4. Tampering Detection Test
-
-print("\n4. Tampering Detection Test")
-
-try:
-    tampered_data = bytearray(ciphertext)
-
-    tampered_data[0] ^= 1
-
-    tampered_ciphertext = bytes(tampered_data)
-
+def check(name, operation, results):
     try:
-        decrypt_message(
-            server_shared_key,
-            nonce,
-            tampered_ciphertext
+        passed = bool(operation())
+    except Exception as error:
+        passed = False
+        print(f"[ERROR] {name}: {type(error).__name__}: {error}")
+    results.append(passed)
+    print(f"[{'PASS' if passed else 'FAIL'}] {name}")
+
+
+def check_authentication():
+    original_user_file = auth.USER_FILE
+    try:
+        with tempfile.TemporaryDirectory(prefix="smcf-auth-test-") as temp_dir:
+            auth.USER_FILE = str(Path(temp_dir) / "users.json")
+            username = "test-user"
+            password = "temporary-test-password"
+            registered = auth.register(username, password)
+            valid_login = auth.authenticate(username, password)
+            invalid_login = auth.authenticate(username, "wrong-password")
+            return registered and valid_login and not invalid_login
+    finally:
+        auth.USER_FILE = original_user_file
+
+
+def main():
+    results = []
+    print("=" * 52)
+    print(" SECURE COMMUNICATION CHECKS")
+    print("=" * 52)
+
+    check("PBKDF2 registration, valid login, and wrong-password rejection",
+          check_authentication, results)
+
+    keys = {}
+
+    def ecdh_agreement():
+        client_private, client_public = generate_ec_keypair()
+        server_private, server_public = generate_ec_keypair()
+        keys["client"] = derive_shared_key(client_private, server_public)
+        keys["server"] = derive_shared_key(server_private, client_public)
+        return keys["client"] == keys["server"]
+
+    check("ECDH shared-key agreement", ecdh_agreement, results)
+
+    message_state = {}
+
+    def aes_round_trip():
+        message_state["message"] = "Secure Mobile Communication"
+        message_state["nonce"], message_state["ciphertext"] = encrypt_message(
+            keys["client"], message_state["message"]
+        )
+        plaintext = decrypt_message(
+            keys["server"], message_state["nonce"], message_state["ciphertext"]
+        )
+        return plaintext == message_state["message"]
+
+    check("AES-GCM encrypt/decrypt round trip", aes_round_trip, results)
+
+    def reject_tampered_ciphertext():
+        changed = bytearray(message_state["ciphertext"])
+        changed[0] ^= 1
+        try:
+            decrypt_message(keys["server"], message_state["nonce"], bytes(changed))
+        except Exception:
+            return True
+        return False
+
+    check("AES-GCM rejects modified ciphertext", reject_tampered_ciphertext, results)
+    check("Replay counter rejects duplicate and older values",
+          lambda: is_replay(5, 5) and is_replay(4, 5), results)
+    check("Replay counter accepts a newer value",
+          lambda: not is_replay(6, 5), results)
+
+    rsa_state = {}
+
+    def verify_valid_signature():
+        rsa_state["private"], rsa_state["public"] = generate_rsa_keypair()
+        rsa_state["message"] = b"Secure Mobile Communication"
+        rsa_state["signature"] = sign_message(
+            rsa_state["private"], rsa_state["message"]
+        )
+        return verify_signature(
+            rsa_state["public"], rsa_state["message"], rsa_state["signature"]
         )
 
-        tampering_detected = False
+    check("RSA-PSS accepts a valid signature", verify_valid_signature, results)
+    check("RSA-PSS rejects a modified message",
+          lambda: not verify_signature(
+              rsa_state["public"], b"Modified message", rsa_state["signature"]
+          ), results)
 
-    except Exception:
-        tampering_detected = True
-
-    print_result(
-        "Modified Ciphertext Rejected",
-        tampering_detected
-    )
-
-except Exception as e:
-    print_result(
-        "Modified Ciphertext Rejected",
-        False
-    )
-    print("Error:", e)
+    passed = sum(results)
+    print("=" * 52)
+    print(f"RESULT: {passed}/{len(results)} checks passed")
+    print("=" * 52)
+    return 0 if passed == len(results) else 1
 
 
-# 5. Replay Attack Detection Test
-
-print("\n5. Replay Attack Detection Test")
-
-try:
-    last_counter = 1
-    received_counter = 2
-
-    replay_detected = received_counter <= last_counter
-
-    print_result(
-        "Repeated Counter Detected",
-        replay_detected
-    )
-
-except Exception as e:
-    print_result(
-        "Repeated Counter Detected",
-        False
-    )
-    print("Error:", e)
-
-
-# 6. RSA Digital Signature Test
-
-print("\n6. RSA Digital Signature Test")
-
-try:
-    rsa_private_key, rsa_public_key = generate_rsa_keypair()
-
-    message = b"Secure Mobile Communication"
-
-    signature = sign_message(
-        rsa_private_key,
-        message
-    )
-
-    valid_signature = verify_signature(
-        rsa_public_key,
-        message,
-        signature
-    )
-
-    print_result(
-        "RSA Signature Verification",
-        valid_signature
-    )
-
-except Exception as e:
-    print_result(
-        "RSA Signature Verification",
-        False
-    )
-    print("Error:", e)
-
-
-# 7. Modified Message Signature Test
-
-print("\n7. Modified Message Signature Test")
-
-try:
-    modified_message = b"Modified Communication"
-
-    invalid_signature = verify_signature(
-        rsa_public_key,
-        modified_message,
-        signature
-    )
-
-    print_result(
-        "Modified Message Rejected",
-        not invalid_signature
-    )
-
-except Exception as e:
-    print_result(
-        "Modified Message Rejected",
-        False
-    )
-    print("Error:", e)
-
-
-# Final Summary
-
-print("\n" + "=" * 50)
-print("          SECURITY EVALUATION COMPLETE")
-print("=" * 50)
-
-print("\nSecurity mechanisms tested:")
-print("1. User Authentication")
-print("2. ECDH Key Exchange")
-print("3. AES-GCM Encryption")
-print("4. Tampering Detection")
-print("5. Replay Detection")
-print("6. RSA Digital Signature")
-print("7. Modified Message Detection")
-
-print("\n" + "=" * 50)
+if __name__ == "__main__":
+    sys.exit(main())

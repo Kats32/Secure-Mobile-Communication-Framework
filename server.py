@@ -1,5 +1,6 @@
 import socket
 import json
+from threading import Lock
 
 from auth import authenticate
 from crypto_utils import (
@@ -12,11 +13,15 @@ from crypto_utils import (
 )
 
 from cryptography.hazmat.primitives import serialization
+from replay_protection import is_replay
 
 HOST = "127.0.0.1"
 PORT = 5000
 
-last_counter = 0
+last_counters = {}
+counter_lock = Lock()
+MAX_JSON_BYTES = 1_048_576
+CLIENT_TIMEOUT_SECONDS = 10
 
 server_ec_private, server_ec_public = generate_ec_keypair()
 
@@ -31,14 +36,18 @@ def receive_json(connection):
             break
 
         data += chunk
+        if len(data) > MAX_JSON_BYTES:
+            raise ValueError("Request exceeds maximum size")
 
     message = data.split(b"\n", 1)[0]
+    if not message:
+        raise ValueError("Connection closed before a request was received")
 
     return json.loads(message.decode())
 
 
 def send_json(connection, data):
-    connection.send(
+    connection.sendall(
         (json.dumps(data) + "\n").encode()
     )
 
@@ -65,6 +74,7 @@ def start_server():
     while True:
 
         connection, address = server.accept()
+        connection.settimeout(CLIENT_TIMEOUT_SECONDS)
 
         print("\nConnection from:", address)
 
@@ -72,8 +82,6 @@ def start_server():
 
 
 def handle_client(connection):
-
-    global last_counter
 
     try:
 
@@ -111,7 +119,8 @@ def handle_client(connection):
             connection,
             {
                 "status": "AUTH_SUCCESS",
-                "server_public_key": server_public_key
+                "server_public_key": server_public_key,
+                "last_counter": last_counters.get(username, 0),
             }
         )
 
@@ -187,34 +196,27 @@ def handle_client(connection):
 
         print("Received counter:", counter)
 
-        if counter <= last_counter:
+        # Check and update the per-user counter atomically. Commit it only
+        # after authenticated decryption succeeds.
+        with counter_lock:
+            previous_counter = last_counters.get(username, 0)
+            if is_replay(counter, previous_counter):
+                print("REPLAY ATTACK DETECTED")
+                print("Message rejected")
+                send_json(
+                    connection,
+                    {
+                        "status": "REPLAY_ATTACK_DETECTED",
+                        "last_counter": previous_counter,
+                    }
+                )
+                return
 
-            print("REPLAY ATTACK DETECTED")
-            print("Message rejected")
-
-            send_json(
-                connection,
-                {
-                    "status": "REPLAY_ATTACK_DETECTED"
-                }
-            )
-
-            return
-
-        last_counter = counter
-
-
-        # 8. AES-GCM Decryption
-
-        nonce = bytes.fromhex(nonce_hex)
-
-        ciphertext = bytes.fromhex(ciphertext_hex)
-
-        plaintext = decrypt_message(
-            session_key,
-            nonce,
-            ciphertext
-        )
+            # 8. AES-GCM Decryption
+            nonce = bytes.fromhex(nonce_hex)
+            ciphertext = bytes.fromhex(ciphertext_hex)
+            plaintext = decrypt_message(session_key, nonce, ciphertext)
+            last_counters[username] = counter
 
         print("Decrypted message:", plaintext)
 

@@ -1,6 +1,6 @@
 # Secure Mobile Communication Framework
 
-A Python-based secure communication framework that combines multiple cryptographic techniques to provide **confidentiality, integrity, authentication, and secure key exchange**.
+A Python-based desktop demonstration of a secure messaging flow using several cryptographic techniques. It is an educational prototype; its raw TCP transport and unauthenticated peer keys do not provide production-grade communication security.
 
 ## Features
 
@@ -36,6 +36,7 @@ Secure-Mobile-Network/
 ├── security_test.py
 ├── auth.py
 ├── attacks.py
+├── replay_protection.py
 ├── pages.py
 ├── assets/
 └── README.md
@@ -43,25 +44,17 @@ Secure-Mobile-Network/
 
 ## Installation
 
-Make sure **Python 3** is installed.
-
-It is recommended to use a virtual environment:
+Install [uv](https://docs.astral.sh/uv/), then create the environment and install the locked dependencies:
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+uv sync
 ```
 
-On Windows:
-
-```powershell
-venv\Scripts\activate
-```
-
-Install the required libraries:
+Run commands inside the project environment with `uv run`, for example:
 
 ```bash
-pip install cryptography PySide6
+uv run python server.py
+uv run python login.py
 ```
 
 ## Running the Project
@@ -90,11 +83,13 @@ The dashboard provides access to:
 
 The framework demonstrates three common attacks:
 
-**Eavesdropping** — demonstrates interception of encrypted communication.
+**Eavesdropping** — displays the client's encrypted packet; it does not capture live network traffic.
 
-**Tampering** — modifies an encrypted message and checks whether the modification is detected.
+**Tampering** — changes ciphertext while retaining its signature, then submits it through the normal handshake. The server should reject the invalid signature.
 
-**Replay Attack** — attempts to resend a previously captured packet.
+**Replay Attack** — resends an accepted packet through the normal handshake. The server should reject its already-used per-user counter.
+
+The console checks can be run with `uv run python security_test.py`. They use a temporary account record and check authentication, cryptographic helpers, and counter ordering.
 
 ## Security Flow
 

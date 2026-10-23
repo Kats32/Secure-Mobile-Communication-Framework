@@ -1,5 +1,8 @@
+import binascii
+import hashlib
+import hmac
 import json
-from crypto_utils import hash_password
+import os
 
 
 USER_FILE = "users.json"
@@ -7,8 +10,11 @@ USER_FILE = "users.json"
 
 def load_users():
 
-    with open(USER_FILE, "r") as file:
-        return json.load(file)
+    try:
+        with open(USER_FILE, "r") as file:
+            return json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
 
 
 def save_users(users):
@@ -24,7 +30,17 @@ def register(username, password):
     if username in users:
         return False
 
-    users[username] = hash_password(password)
+    salt = os.urandom(16)
+    password_hash = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode(),
+        salt,
+        100000,
+    )
+    users[username] = {
+        "salt": binascii.hexlify(salt).decode(),
+        "password_hash": binascii.hexlify(password_hash).decode(),
+    }
 
     save_users(users)
 
@@ -35,7 +51,20 @@ def authenticate(username, password):
 
     users = load_users()
 
-    if username not in users:
+    user_data = users.get(username)
+    if not isinstance(user_data, dict):
         return False
 
-    return users[username] == hash_password(password)
+    try:
+        salt = binascii.unhexlify(user_data["salt"])
+        expected_hash = binascii.unhexlify(user_data["password_hash"])
+    except (KeyError, TypeError, binascii.Error):
+        return False
+
+    candidate_hash = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode(),
+        salt,
+        100000,
+    )
+    return hmac.compare_digest(candidate_hash, expected_hash)

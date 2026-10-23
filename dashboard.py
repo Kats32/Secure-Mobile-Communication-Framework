@@ -40,6 +40,7 @@ class Dashboard(QWidget):
 
         self.username = username
         self.last_packet = None
+        self.last_attack_credentials = None
         self.activity_items = []
         self.activity_history = []
 
@@ -912,6 +913,7 @@ class Dashboard(QWidget):
             )
 
             self.last_packet = packet
+            self.last_attack_credentials = (username, password)
 
             return packet
 
@@ -972,7 +974,8 @@ class Dashboard(QWidget):
             return
 
         result = tampering_demo(
-            packet
+            packet,
+            *self.last_attack_credentials,
         )
 
         self.show_attack_result(
@@ -995,7 +998,8 @@ class Dashboard(QWidget):
             return
 
         result = replay_demo(
-            packet
+            packet,
+            *self.last_attack_credentials,
         )
 
         self.show_attack_result(
@@ -1129,9 +1133,16 @@ class Dashboard(QWidget):
 
         layout.addWidget(alert)
 
-        heading = QLabel(
-            "ATTACK DETECTED"
-        )
+        if status == "PROTECTED":
+            heading_text = "EAVESDROPPING PROTECTED"
+        elif status == "BLOCKED":
+            heading_text = "ATTACK BLOCKED"
+        elif status == "FAILED":
+            heading_text = "SIMULATION FAILED"
+        else:
+            heading_text = "ATTACK RESULT"
+
+        heading = QLabel(heading_text)
 
         heading.setAlignment(
             Qt.AlignCenter

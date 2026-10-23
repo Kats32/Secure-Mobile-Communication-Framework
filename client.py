@@ -41,7 +41,7 @@ def receive_json(client):
     return json.loads(message.decode())
 
 
-def send_message(counter, tamper=False, username=None, password=None, message=None):
+def send_message(counter=None, tamper=False, username=None, password=None, message=None):
 
     if username is None:
         username = input("Username: ")
@@ -66,6 +66,7 @@ def send_message(counter, tamper=False, username=None, password=None, message=No
         socket.AF_INET,
         socket.SOCK_STREAM
     )
+    client.settimeout(10)
 
     client.connect((HOST, PORT))
 
@@ -77,7 +78,7 @@ def send_message(counter, tamper=False, username=None, password=None, message=No
         "password": password
     }
 
-    client.send(
+    client.sendall(
         (json.dumps(login_request) + "\n").encode()
     )
 
@@ -85,11 +86,8 @@ def send_message(counter, tamper=False, username=None, password=None, message=No
 
     if response["status"] != "AUTH_SUCCESS":
 
-        print("Authentication failed")
-
         client.close()
-
-        return
+        raise ValueError("Authentication failed")
 
     print("Authentication successful")
 
@@ -104,6 +102,9 @@ def send_message(counter, tamper=False, username=None, password=None, message=No
         client_ec_private,
         server_public_key
     )
+
+    if counter is None:
+        counter = int(response.get("last_counter", 0)) + 1
 
     print("ECDH key exchange completed")
 
@@ -135,7 +136,7 @@ def send_message(counter, tamper=False, username=None, password=None, message=No
             client_rsa_public_key.decode()
     }
 
-    client.send(
+    client.sendall(
         (json.dumps(key_request) + "\n").encode()
     )
 
@@ -209,7 +210,7 @@ def send_message(counter, tamper=False, username=None, password=None, message=No
     
     # Send encrypted message
 
-    client.send(
+    client.sendall(
         (json.dumps(encrypted_message) + "\n").encode()
     )
 
@@ -219,143 +220,30 @@ def send_message(counter, tamper=False, username=None, password=None, message=No
     print(response)
     
     client.close()
+
+    if response.get("status") != "MESSAGE_ACCEPTED":
+        raise RuntimeError(
+            f"Server rejected the message: {response.get('status', 'UNKNOWN')}"
+        )
+
+    encrypted_message["_client_rsa_public_key"] = client_rsa_public_key.decode()
+    last_packet = encrypted_message.copy()
 
     return encrypted_message
 
 
 def replay_attack():
-
     username = input("Username: ")
     password = input("Password: ")
-
     message = input("Enter message: ")
-
-    
-    # Generate keys
-
-    client_ec_private, client_ec_public = generate_ec_keypair()
-
-    client_rsa_private, client_rsa_public = generate_rsa_keypair()
-
-    client = socket.socket(
-        socket.AF_INET,
-        socket.SOCK_STREAM
+    packet = send_message(
+        username=username,
+        password=password,
+        message=message,
     )
-
-    client.connect((HOST, PORT))
-
-    
-    # Authentication
-
-    login_request = {
-
-        "username": username,
-        "password": password
-    }
-
-    client.send(
-        (json.dumps(login_request) + "\n").encode()
-    )
-
-    response = receive_json(client)
-
-    if response["status"] != "AUTH_SUCCESS":
-
-        print("Authentication failed")
-
-        client.close()
-
-        return
-
-    print("Authentication successful")
-
-    
-    # ECDH
-
-    server_public_key = load_ec_public_key(
-        response["server_public_key"].encode()
-    )
-
-    shared_key = derive_shared_key(
-        client_ec_private,
-        server_public_key
-    )
-
-    print("ECDH key exchange completed")
-
-    
-    # Public keys
-
-    client_public_key = client_ec_public.public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo
-    )
-
-    client_rsa_public_key = client_rsa_public.public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo
-    )
-
-    key_request = {
-
-        "client_public_key":
-            client_public_key.decode(),
-
-        "client_rsa_public_key":
-            client_rsa_public_key.decode()
-    }
-
-    client.send(
-        (json.dumps(key_request) + "\n").encode()
-    )
-
-
-    # Encrypt message
-
-    nonce, ciphertext = encrypt_message(
-        shared_key,
-        message
-    )
-
-    counter = 1
-
-    signed_data = (
-
-        f"{counter}|"
-        f"{nonce.hex()}|"
-        f"{ciphertext.hex()}"
-
-    ).encode()
-
-    signature = sign_message(
-        client_rsa_private,
-        signed_data
-    )
-
-    encrypted_message = {
-
-        "counter": counter,
-
-        "nonce": nonce.hex(),
-
-        "ciphertext": ciphertext.hex(),
-
-        "signature": signature.hex()
-    }
-
-    print("\nReplay attack message prepared.")
-    print("Counter:", counter)
-
-    client.send(
-        (json.dumps(encrypted_message) + "\n").encode()
-    )
-
-    response = receive_json(client)
-
-    print("\nServer response:")
-    print(response)
-
-    client.close()
+    result = replay_demo(packet, username, password)
+    print("\nReplay simulation result:")
+    print(result)
 
 def run_eavesdropping():
     if last_packet is None:
@@ -367,29 +255,28 @@ def run_eavesdropping():
     return eavesdropping_demo(last_packet)
 
 
-def run_tampering():
+def run_tampering(username, password):
     if last_packet is None:
         return {
             "status": "ERROR",
             "details": "No encrypted packet available."
         }
 
-    return tampering_demo(last_packet)
+    return tampering_demo(last_packet, username, password)
 
 
-def run_replay():
+def run_replay(username, password):
     if last_packet is None:
         return {
             "status": "ERROR",
             "details": "No encrypted packet available."
         }
 
-    return replay_demo(last_packet)
+    return replay_demo(last_packet, username, password)
 
 def create_secure_packet(username, password, message):
 
     return send_message(
-        counter=1,
         username=username,
         password=password,
         message=message
@@ -406,22 +293,20 @@ if __name__ == "__main__":
 
     if choice == "1":
 
-        send_message(
-            counter=1
-        )
+        send_message()
 
     elif choice == "2":
 
-        send_message(
-            counter=1
-        )
+        packet = send_message()
+        print(eavesdropping_demo(packet))
 
     elif choice == "3":
 
-        send_message(
-            counter=2,
-            tamper=True
-        )
+        username = input("Username: ")
+        password = input("Password: ")
+        message = input("Enter message: ")
+        packet = send_message(username=username, password=password, message=message)
+        print(tampering_demo(packet, username, password))
 
     elif choice == "4":
 
